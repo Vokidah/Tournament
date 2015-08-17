@@ -11,31 +11,39 @@ def connect():
     """Connect to the PostgreSQL database.  Returns a database connection."""
     return psycopg2.connect("dbname=tournament")
 
+def execute_query(query, variables=(), fetch = False, commit = False):
+    # Template for execution queries
+    db = connect()
+    c = db.cursor()
+    c.execute(query, variables)
+    if fetch:
+        fetched = c.fetchall()
+        if len(fetched) == 1:
+            fetched = fetched[0]
+    else:
+        fetched = None
+    if commit:
+        db.commit()
+    db.close()
+    return fetched
 
 def deleteMatches():
     """Remove all the match records from the database."""
-    db = connect()
-    c = db.cursor()
-    c.execute("delete from matches;")
-    db.commit()
-    db.close()
+    query = "delete from matches;"
+    execute_query(query, commit = True)
 
 def deletePlayers():
     """Remove all the player records from the database."""
-    db = connect()
-    c = db.cursor()
-    c.execute("delete from player;")
-    db.commit()
-    db.close()
+    query = "delete from player;"
+    execute_query(query, commit = True)
 
 def countPlayers():
     """Returns the number of players currently registered."""
-    db = connect()
-    c = db.cursor()
-    c.execute("select count(*) as num from player;")
-    num = c.fetchone()[0]
-    db.close()
-    return num
+
+    # Counting all our players who are already registered in our database
+    query = "select count(*) as num from player;"
+
+    return execute_query(query, fetch=True)[0]
 
 def registerPlayer(name):
     """Adds a player to the tournament database.
@@ -46,12 +54,12 @@ def registerPlayer(name):
     Args:
       name: the player's full name (need not be unique).
     """
-    db = connect()
-    c = db.cursor()
-    c.execute("insert into player(name) values(%s);", (bleach.clean(name),))
-    db.commit()
-    db.close()
+    # Adding new player in our tournament database
+    query = "insert into player(name) values(%s);"
 
+    # checking our name for correctness
+    variables = (bleach.clean(name),)
+    execute_query(query, variables, commit=True)
 
 def playerStandings():
     """Returns a list of the players and their win records, sorted by wins.
@@ -66,15 +74,15 @@ def playerStandings():
         wins: the number of matches the player has won
         matches: the number of matches the player has played
     """
-    list = []
-    db = connect()
-    c = db.cursor()
-    c.execute("select * from player;")
-    players = c.fetchall()
+    final_list = []
+
+    # Just getting all players
+    query = "select * from player;"
+
+    players = execute_query(query, fetch=True)
     for player in players:
-        list.append(player)
-    db.close()
-    return list
+        final_list.append(player)
+    return final_list
 
 
 
@@ -85,18 +93,27 @@ def reportMatch(winner, loser):
       winner:  the id number of the player who won
       loser:  the id number of the player who lost
     """
-    db = connect()
-    c = db.cursor()
-    c.execute("insert into matches(first_player_id,second_player_id,winner) values(%s,%s,%s)",
-              (winner,loser,winner))
-    c.execute("update player set wins=(select wins from player where id=%s)+1 where id = %s",
-              (winner,winner))
-    c.execute("update player set matches=(select matches from player where id=%s)+1 where id = %s",
-              (winner,winner))
-    c.execute("update player set matches=(select matches from player where id=%s)+1 where id = %s",
-              (loser,loser))
-    db.commit()
-    db.close()
+
+    # select winner and loser in matches table
+    query = "insert into matches(winner,loser) values(%s,%s)"
+    variables = (winner, loser)
+    execute_query(query, variables, commit=True)
+
+    # updating winner`s count of wins
+    query = "update player set wins=(select wins from player where id=%s)+1 where id = %s"
+    variables = (winner, winner)
+    execute_query(query, variables, commit=True)
+
+    # updating count of matches for both players
+
+    query = "update player set matches=(select matches from player where id=%s)+1 where id = %s"
+    variables = (loser, loser)
+    execute_query(query, variables, commit=True)
+
+    query = "update player set matches=(select matches from player where id=%s)+1 where id = %s"
+    variables = (winner, winner)
+    execute_query(query, variables, commit=True)
+
 
 
 def swissPairings():
@@ -114,18 +131,21 @@ def swissPairings():
         id2: the second player's unique id
         name2: the second player's name
     """
-    db = connect()
-    c = db.cursor()
-    list = []
-    c.execute("select max(player.wins) from player")
-    max_wins = c.fetchone()[0]+1
-    for i in range(0,max_wins):
-        c.execute("select id,name from player where wins=%s",str(i))
-        my_list=[]
-        for id,name in c.fetchall():
-            my_list.append(id)
-            my_list.append(name)
-        list.append(tuple(my_list))
-    return list
+    final_list = []
+    my_list = []
 
+    # Getting all players in order by losers
+    query = "select id, name from player order by wins desc"
 
+    players = execute_query(query, fetch=True)
+    check = False
+    for (number, name) in players:
+        my_list.append(number)
+        my_list.append(name)
+        if check:
+            final_list.append(tuple(my_list))
+            my_list = []
+            check = False
+        else:
+            check = True
+    return final_list

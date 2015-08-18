@@ -9,12 +9,13 @@ import bleach
 
 def connect():
     """Connect to the PostgreSQL database.  Returns a database connection."""
-    return psycopg2.connect("dbname=tournament")
+    db = psycopg2.connect("dbname=tournament")
+    c = db.cursor()
+    return db, c
 
 def execute_query(query, variables=(), fetch = False, commit = False):
     # Template for execution queries
-    db = connect()
-    c = db.cursor()
+    db, c = connect()
     c.execute(query, variables)
     if fetch:
         fetched = c.fetchall()
@@ -77,7 +78,7 @@ def playerStandings():
     final_list = []
 
     # Just getting all players
-    query = "select * from player;"
+    query = "select * from player order by wins asc;"
 
     players = execute_query(query, fetch=True)
     for player in players:
@@ -133,19 +134,12 @@ def swissPairings():
     """
     final_list = []
     my_list = []
-
-    # Getting all players in order by losers
-    query = "select id, name from player order by wins desc"
-
-    players = execute_query(query, fetch=True)
-    check = False
-    for (number, name) in players:
+    players = playerStandings()
+    for (number, name, wins, matches) in players:
         my_list.append(number)
         my_list.append(name)
-        if check:
+        if len(my_list) == 4:
             final_list.append(tuple(my_list))
             my_list = []
-            check = False
-        else:
-            check = True
+    print(final_list)
     return final_list
